@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import pandas as pd
 from typing import Union, Optional
@@ -256,7 +257,7 @@ class DistanceAlignment():
         if return_similarity:
             return sim_df
 
-    def pairwise_align(self, D1: str, D2: str, check: bool = True) -> pd.DataFrame:
+    def pairwise_align(self, D1: str, D2: str, check: bool = True, prior_path: Optional[str] = None, prior_weight: float = 0.2,) -> pd.DataFrame:
         """
         Pairwise alignment of cell types between two datasets.
 
@@ -279,10 +280,30 @@ class DistanceAlignment():
             3) **name of dataset 2**, cell types from dataset 2.
         """
         D1byD2, D2byD1 = self.base_distance.to_pairwise_confusion(D1, D2, check)
+
+        if prior_path is not None:
+            with open(prior_path, 'rb') as f:
+                embedding_dict = pickle.load(f)
+                D1_embedding_array = np.array([embedding_dict[x] for x in D1byD2.index])
+                D2_embedding_array = np.array([embedding_dict[x] for x in D2byD1.index])
+                dot_product = np.dot(D1_embedding_array, D2_embedding_array.T)
+                norm_A = np.linalg.norm(D1_embedding_array, axis=1).reshape(-1, 1)
+                norm_B = np.linalg.norm(D2_embedding_array, axis=1).reshape(1, -1)
+                D1byD2_prior = dot_product / (norm_A * norm_B)
+                D1byD2_prior = (D1byD2_prior - np.mean(D1byD2_prior, axis = 1)[:, np.newaxis]) / (1 - np.mean(D1byD2_prior, axis = 1)[:, np.newaxis]) # mean-max normalization
+                D1byD2_prior[D1byD2_prior < 0] = 0
+                D1byD2_prior = D1byD2_prior / D1byD2_prior.sum(axis = 1)[:, np.newaxis] # normalize each row to sum to 1
+                D2byD1_prior = dot_product.T / (norm_B.T * norm_A.T)
+                D2byD1_prior = (D2byD1_prior - np.mean(D2byD1_prior, axis = 1)[:, np.newaxis]) / (1 - np.mean(D2byD1_prior, axis = 1)[:, np.newaxis]) # mean-max normalization
+                D2byD1_prior[D2byD1_prior < 0] = 0
+                D2byD1_prior = D2byD1_prior / D2byD1_prior.sum(axis = 1)[:, np.newaxis] # normalize each row to sum to 1
+                
+            D1byD2 = D1byD2 * (1 - prior_weight) + D1byD2.sum(axis = 1).values[:, np.newaxis] * D1byD2_prior * prior_weight
+            D2byD1 = D2byD1 * (1 - prior_weight) + D2byD1.sum(axis = 1).values[:, np.newaxis] * D2byD1_prior * prior_weight
         relation = _pairwise_align(D1byD2, D2byD1, False, self.row_normalize, self.minimum_unique_percent, self.minimum_divide_percent, self.maximum_novel_percent)
         return relation.rename(columns = {'D1': D1, 'D2': D2})
 
-    def multi_align(self, relation: pd.DataFrame, D: str, check: bool = True) -> pd.DataFrame:
+    def multi_align(self, relation: pd.DataFrame, D: str, check: bool = True, prior_path: Optional[str] = None, prior_weight: float = 0.2) -> pd.DataFrame:
         """
         Multiple alignment of cell types across datasets. Cell types from a new dataset will be integrated into the previous harmonization data frame.
 
@@ -306,7 +327,63 @@ class DistanceAlignment():
             4) ...
             N) **name of the new dataset**, cell types from the new dataset.
         """
+        
         D1byD2, D2byD1 = self.base_distance.to_multi_confusion(relation, D, check)
+        
+        if prior_path is not None:
+            with open(prior_path, 'rb') as f:
+                embedding_dict = pickle.load(f)
+                D2_embedding_array = np.array([embedding_dict[x] for x in D1byD2.columns])
+                D1_embedding_array = np.zeros((D1byD2.shape[0], D2_embedding_array.shape[1]))
+                for _i in range(D1byD2.shape[0]):
+
+                    text = D1byD2.index[_i]
+                    special_chars = r"[=∋∈]"
+                    split_result = re.split(special_chars, text)
+                    split_result = [x.strip() for x in split_result]
+                    char_positions = [m.start() for m in re.finditer(special_chars, text)]
+                    chars = [text[pos] for pos in char_positions]
+                    celltype_list = []
+                    for i, part in enumerate(split_result):
+                        celltype_list.append(part)
+                        if i < len(chars):
+                            celltype_list.append(chars[i])
+
+                    incorporate_dataset_celltype_list = []
+                    while len(celltype_list) > 1:
+                        new_list = celltype_list.copy()
+                        for i, x in enumerate(celltype_list):
+                            if x in ['=', '∋', '∈']:
+                                _relation = new_list.pop(i)
+                                if _relation == '∋':
+                                    new_list.pop(i-1)
+                                elif _relation == '∈':
+                                    new_list.pop(i)
+                                elif _relation == '=':
+                                    incorporate_dataset_celltype_list.append(new_list.pop(i))
+                                break
+                        celltype_list = new_list.copy()
+                    incorporate_dataset_celltype_list.append(celltype_list[0])
+                    incorporate_dataset_celltype_list = [x for x in incorporate_dataset_celltype_list if x not in [UNASSIGN, REMAIN, NOVEL]]
+                    if len(incorporate_dataset_celltype_list) == 0:
+                        raise ValueError("No cell type is incorporated from previous datasets")
+                    D1_embedding_array[_i, :] = np.mean(np.array([embedding_dict[x] for x in incorporate_dataset_celltype_list]), axis = 0)
+
+            dot_product = np.dot(D1_embedding_array, D2_embedding_array.T)
+            norm_A = np.linalg.norm(D1_embedding_array, axis=1).reshape(-1, 1)
+            norm_B = np.linalg.norm(D2_embedding_array, axis=1).reshape(1, -1)
+            D1byD2_prior = dot_product / (norm_A * norm_B)
+            D1byD2_prior = (D1byD2_prior - np.mean(D1byD2_prior, axis = 1)[:, np.newaxis]) / (1 - np.mean(D1byD2_prior, axis = 1)[:, np.newaxis]) # mean-max normalization
+            D1byD2_prior[D1byD2_prior < 0] = 0
+            D1byD2_prior = D1byD2_prior / D1byD2_prior.sum(axis = 1)[:, np.newaxis] # normalize each row to sum to 1
+            D2byD1_prior = dot_product.T / (norm_B.T * norm_A.T)
+            D2byD1_prior = (D2byD1_prior - np.mean(D2byD1_prior, axis = 1)[:, np.newaxis]) / (1 - np.mean(D2byD1_prior, axis = 1)[:, np.newaxis]) # mean-max normalization
+            D2byD1_prior[D2byD1_prior < 0] = 0
+            D2byD1_prior = D2byD1_prior / D2byD1_prior.sum(axis = 1)[:, np.newaxis] # normalize each row to sum to 1
+            
+            D1byD2 = D1byD2 * (1 - prior_weight) + D1byD2.sum(axis = 1).values[:, np.newaxis] * D1byD2_prior * prior_weight
+            D2byD1 = D2byD1 * (1 - prior_weight) + D2byD1.sum(axis = 1).values[:, np.newaxis] * D2byD1_prior * prior_weight
+     
         new_relation = _pairwise_align(D1byD2, D2byD1, False, self.row_normalize, self.minimum_unique_percent, self.minimum_divide_percent, self.maximum_novel_percent)
         relation.index = relation.apply(lambda row: ' '.join(row.values), axis = 1).values
         relation.loc[NOVEL] = np.tile([NOVEL, ONE2ONE], int(relation.shape[1]/2)+1)[:-1]
@@ -410,7 +487,8 @@ class DistanceAlignment():
             self.relation = self.multi_align(self.relation, dataset, False)
         logger.info(f"✅ Harmonization done!")
 
-    def best_align(self, dataset_order: Optional[Union[list, tuple, np.ndarray, pd.Series, pd.Index]] = None, minimum_unique_percents: Union[list, tuple, np.ndarray, pd.Series, pd.Index, float] = (0.4, 0.5, 0.6, 0.7, 0.8), minimum_divide_percents: Union[list, tuple, np.ndarray, pd.Series, pd.Index, float] = (0.1, 0.15, 0.2)):
+    def best_align(self, dataset_order: Optional[Union[list, tuple, np.ndarray, pd.Series, pd.Index]] = None, minimum_unique_percents: Union[list, tuple, np.ndarray, pd.Series, pd.Index, float] = (0.4, 0.5, 0.6, 0.7, 0.8), minimum_divide_percents: Union[list, tuple, np.ndarray, pd.Series, pd.Index, float] = (0.1, 0.15, 0.2),
+                   prior_path: Optional[str] = None, prior_weight: float = 0.2) -> None:
         """
         Iterative alignment of cell types across datasets by finding the best parameter combo in each iteration.
 
@@ -455,7 +533,7 @@ class DistanceAlignment():
             for minimum_divide_percent in minimum_divide_percents:
                 self.minimum_unique_percent = minimum_unique_percent
                 self.minimum_divide_percent = minimum_divide_percent
-                per_relation = self.pairwise_align(dataset_order[0], dataset_order[1], check = False)
+                per_relation = self.pairwise_align(dataset_order[0], dataset_order[1], check = False, prior_path = prior_path, prior_weight = prior_weight)
                 if per_relation.shape[0] <= n_rows:
                     relation = per_relation
                     n_rows = per_relation.shape[0]
@@ -469,7 +547,7 @@ class DistanceAlignment():
                     for minimum_divide_percent in minimum_divide_percents:
                         self.minimum_unique_percent = minimum_unique_percent
                         self.minimum_divide_percent = minimum_divide_percent
-                        per_relation = self.multi_align(relation.copy(), dataset_order[i], check = False)
+                        per_relation = self.multi_align(relation.copy(), dataset_order[i], check = False, prior_path = prior_path, prior_weight = prior_weight)
                         if per_relation.shape[0] <= n_rows:
                             expand_relation = per_relation
                             n_rows = per_relation.shape[0]

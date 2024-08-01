@@ -440,7 +440,9 @@ class Distance():
             D2byD1 = D2byD1.join(pd.DataFrame(np.zeros((len(D2byD1.index), len(D2byD1_lack_columns)), dtype=int), index = D2byD1.index, columns = D2byD1_lack_columns))
         return D1byD2, D2byD1.loc[D1byD2.columns, D1byD2.index]
 
-    def to_multi_confusion(self, relation: pd.DataFrame, D: str, check: bool = True) -> tuple:
+    def to_multi_confusion(self, relation: pd.DataFrame, D: str, check: bool = True,
+                        #    use_paga = False, df_paga: Optional[pd.DataFrame] = None
+                           ) -> tuple:
         """
         Extract the confusion matrices between meta-cell-types defined prior and cell types from a new dataset.
 
@@ -474,15 +476,39 @@ class Distance():
         D1_flag = self.cell.dataset.isin(datasets)
         D1_assign = self.assignment[D1_flag]
         D1_truth = np.full(D1_assign.shape[0], UNASSIGN, dtype = object)
-        for _, s in relation.iterrows():
+        # if use_paga:
+        #     paga_D1byD2 = pd.DataFrame(np.zeros((len(relation), len(df_paga.columns))), index = relation.apply(lambda row: ' '.join(row.values.astype(str)), axis=1), columns = df_paga.columns)
+        for index, s in relation.iterrows():
             celltypes = s.values[0::2]
             non_blank_flag = ~np.isin(celltypes, [NOVEL, REMAIN])
             existing_datasets = datasets[non_blank_flag]
             existing_celltypes = celltypes[non_blank_flag]
             flag = np.all(D1_assign[existing_datasets] == existing_celltypes, axis = 1).values & self.cell[D1_flag].dataset.isin(existing_datasets).values
             D1_truth[flag] = ' '.join(s.values)
+            D1_used = D1_truth != UNASSIGN
+            
+        #     if use_paga:
+        #         _used_cells = self.cell[D1_flag][D1_used].copy()
+        #         if _used_cells.shape[0] == 0:
+        #             continue
+        #         else:
+        #             # Only using key columns
+        #             _used_cells.loc[:, 'Dataset_cell_type'] = _used_cells['dataset'].astype(str) + '_' + _used_cells['cell_type'].astype(str)
+        #             used_celltypes = _used_cells.loc[:, 'Dataset_cell_type'].value_counts()
+        #             print(used_celltypes)
+        #             for _celltype, _celltype_counts in zip(used_celltypes.index, used_celltypes):
+        #                 paga_D1byD2.iloc[index, :] += df_paga.loc[_celltype, :] * _celltype_counts
+        #             # safe division
+        #             paga_D1byD2.iloc[index, :] = paga_D1byD2.iloc[index, :] / used_celltypes.sum()
+        
+        # if use_paga:
+        #     paga_D1byD2 = paga_D1byD2.loc[:, paga_D1byD2.columns.str.contains(D)]
+        #     paga_D2byD1 = paga_D1byD2.T
+        #     return paga_D1byD2, paga_D2byD1
+            
         D1_used = D1_truth != UNASSIGN
         D1byD2 = pd.crosstab(D1_truth[D1_used], D1_assign.loc[D1_used, D])
+
         #D2byD1
         D2_flag = self.cell.dataset == D
         D2_assign = self.assignment[D2_flag]

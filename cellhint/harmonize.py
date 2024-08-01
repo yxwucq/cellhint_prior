@@ -1,5 +1,5 @@
 from anndata import AnnData
-import scanpy
+import scanpy as sc
 from typing import Union, Optional
 import pandas as pd
 import numpy as np
@@ -25,6 +25,9 @@ def harmonize(adata: AnnData,
               maximum_novel_percent: float = 0.05,
               #reannotate
               reannotate: bool = True, prefix: str = '',
+              #use prior embeddings from original annotation
+              prior_path: Optional[str] = None,
+              prior_weight: float = 0.2,
               #to PCT train
               **kwargs) -> DistanceAlignment:
     """
@@ -127,8 +130,8 @@ def harmonize(adata: AnnData,
     if dataset_order is None and reorder_dataset:
         logger.info(f"🏆 Reordering datasets")
         alignment.reorder_dataset()
-    #cell type alignment
-    alignment.best_align(dataset_order = None, minimum_unique_percents = minimum_unique_percents, minimum_divide_percents = minimum_divide_percents)
+    # cell type alignment
+    alignment.best_align(dataset_order = None, minimum_unique_percents = minimum_unique_percents, minimum_divide_percents = minimum_divide_percents, prior_path = prior_path, prior_weight = prior_weight)
     #reannotate
     if reannotate:
         logger.info(f"🖋️ Reannotating cells")
