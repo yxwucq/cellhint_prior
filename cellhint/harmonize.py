@@ -92,6 +92,12 @@ def harmonize(adata: AnnData,
         (Default: `True`)
     prefix
         Column prefix for the reannotation data frame.
+    prior_path
+        Path to the prior embeddings (e.g., UMAP, t-SNE) from the original annotation.
+        If provided, the prior embeddings will be used to calculate the prior distance matrix.
+    prior_weight
+        The weight of the prior distance matrix in the final distance matrix.
+        (Default: `0.2`)    
     **kwargs
         Other keyword arguments passed to :class:`~cellhint.pct.PredictiveClusteringTree`.
 
