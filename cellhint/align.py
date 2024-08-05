@@ -187,7 +187,7 @@ class DistanceAlignment():
         self.minimum_divide_percent = minimum_divide_percent
         self.maximum_novel_percent = maximum_novel_percent
 
-    def reorder_dataset(self, weights: Union[list, tuple, np.ndarray, pd.Series, pd.Index] = (2, 1, -1, -2), return_similarity: bool = False) -> Union[None, pd.DataFrame]:
+    def reorder_dataset(self, weights: Union[list, tuple, np.ndarray, pd.Series, pd.Index] = (2, 1, -1, -2), return_similarity: bool = False, prior_path: Optional[str] = None, prior_weight: float = 0.2) -> Union[None, pd.DataFrame]:
         """
         Reorder the datasets such that similar datasets will be harmonized first. This method can also be used to calculate CellHint-defined inter-dataset similarities.
 
@@ -218,7 +218,7 @@ class DistanceAlignment():
             sub_meta_similarity = meta_similarity.loc[meta_similarity.index.str.startswith(D1 + ": "), meta_similarity.columns.str.startswith(D2 + ": ")]
             sub_meta_similarity.index = sub_meta_similarity.index.str.replace(D1 + ": ", '', regex = False)
             sub_meta_similarity.columns = sub_meta_similarity.columns.str.replace(D2 + ": ", '', regex = False)
-            relation = self.pairwise_align(D1, D2, False)
+            relation = self.pairwise_align(D1, D2, False, prior_path = prior_path, prior_weight = prior_weight)
             ss = np.full(relation.shape[0], -1, dtype = 'float')
             ws = np.full(relation.shape[0], weights[0], dtype = 'float')
             #REMAIN NOVEL

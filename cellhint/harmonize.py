@@ -135,7 +135,7 @@ def harmonize(adata: AnnData,
     alignment = DistanceAlignment(combined_distance, check = False, dataset_order = dataset_order, row_normalize = True, maximum_novel_percent = maximum_novel_percent)
     if dataset_order is None and reorder_dataset:
         logger.info(f"🏆 Reordering datasets")
-        alignment.reorder_dataset()
+        alignment.reorder_dataset(prior_path = prior_path, prior_weight = prior_weight)
     # cell type alignment
     alignment.best_align(dataset_order = None, minimum_unique_percents = minimum_unique_percents, minimum_divide_percents = minimum_divide_percents, prior_path = prior_path, prior_weight = prior_weight)
     #reannotate
