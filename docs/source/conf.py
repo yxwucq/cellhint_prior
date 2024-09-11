@@ -13,13 +13,13 @@ sys.path.insert(0, os.path.abspath('../../'))
 
 # -- Required imports --------------------------------------------------------
 from datetime import datetime
-import cellhint
+import cellhint_prior
 
 # -- Project information -----------------------------------------------------
 project = 'cellhint'
 author = 'Chuan Xu'
 copyright = f'{datetime.now():%Y}, {author}'
-release = cellhint.__version__
+release = cellhint_prior.__version__
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom

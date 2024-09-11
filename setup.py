@@ -9,15 +9,15 @@ def get_requirements():
         return [line.strip() for line in fh.readlines()]
 
 def get_version():
-    with open("cellhint/__init__.py", "rt", encoding="utf-8") as fh:
+    with open("cellhint_prior/__init__.py", "rt", encoding="utf-8") as fh:
         for line in fh.readlines():
             if line.startswith('__version__'):
                 delim = '"' if '"' in line else "'"
                 return line.split(delim)[1].strip()
-    raise RuntimeError("Unable to find version string in cellhint/__init__.py")
+    raise RuntimeError("Unable to find version string in cellhint_prior/__init__.py")
 
 setuptools.setup(
-    name="cellhint",
+    name="cellhint_prior",
     version=get_version(),
     author="Chuan Xu",
     author_email="cx1@sanger.ac.uk",
