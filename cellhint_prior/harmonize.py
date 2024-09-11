@@ -26,8 +26,8 @@ def harmonize(adata: AnnData,
               #reannotate
               reannotate: bool = True, prefix: str = '',
               #use prior embeddings from original annotation
-              prior_path: Optional[str] = None,
-              prior_weight: float = 0.2,
+              #prior_df: Optional[pd.DataFrame] = None,
+              embedding_dict: Optional[dict] = None,
               #to PCT train
               **kwargs) -> DistanceAlignment:
     """
@@ -92,12 +92,10 @@ def harmonize(adata: AnnData,
         (Default: `True`)
     prefix
         Column prefix for the reannotation data frame.
-    prior_path
-        Path to the prior embeddings (e.g., UMAP, t-SNE) from the original annotation.
-        If provided, the prior embeddings will be used to calculate the prior distance matrix.
-    prior_weight
-        The weight of the prior distance matrix in the final distance matrix.
-        (Default: `0.2`)    
+    embedding_dict
+        A dictionary containing prior embeddings for each cell type.
+        The keys are cell type names and the values are the corresponding embeddings.
+        (Default: `None`)
     **kwargs
         Other keyword arguments passed to :class:`~cellhint.pct.PredictiveClusteringTree`.
 
@@ -125,7 +123,7 @@ def harmonize(adata: AnnData,
         separate_distances.train(F_test_prune = F_test_prune, p_thres = p_thres, random_state = random_state, **kwargs)
         combined_distance = separate_distances.predict(normalize = normalize, return_distance = True, Gaussian_kernel = Gaussian_kernel)
     else:
-        combined_distance = Distance.from_adata(adata, dataset = dataset, cell_type = cell_type, use_rep = use_rep, metric = metric, n_jobs = -1, check_params = True)
+        combined_distance = Distance.from_adata(adata, dataset = dataset, cell_type = cell_type, use_rep = use_rep, metric = metric, n_jobs = -1, check_params = True, embedding_dict=embedding_dict)
         if filter_cells:
             combined_distance.filter_cells(check_symmetry = False)
         if normalize:
@@ -133,11 +131,20 @@ def harmonize(adata: AnnData,
     #before cell type alignment
     combined_distance.assign()
     alignment = DistanceAlignment(combined_distance, check = False, dataset_order = dataset_order, row_normalize = True, maximum_novel_percent = maximum_novel_percent)
+    #construct prior_df
+    if embedding_dict is not None:
+        prior_array = np.array([embedding_dict[x] for x in list(embedding_dict.keys())])
+        prior_df_values = np.dot(prior_array, prior_array.T)
+        prior_df_values = prior_df_values
+        prior_df = pd.DataFrame(prior_df_values, index = list(embedding_dict.keys()), columns = list(embedding_dict.keys()))
+        # test if prior_df is all 1s
+        prior_df = pd.DataFrame(np.ones_like(prior_df), index = list(embedding_dict.keys()), columns = list(embedding_dict.keys()))
+        
     if dataset_order is None and reorder_dataset:
         logger.info(f"🏆 Reordering datasets")
-        alignment.reorder_dataset(prior_path = prior_path, prior_weight = prior_weight)
+        alignment.reorder_dataset(prior_df = prior_df)
     # cell type alignment
-    alignment.best_align(dataset_order = None, minimum_unique_percents = minimum_unique_percents, minimum_divide_percents = minimum_divide_percents, prior_path = prior_path, prior_weight = prior_weight)
+    alignment.best_align(dataset_order = None, minimum_unique_percents = minimum_unique_percents, minimum_divide_percents = minimum_divide_percents, prior_df = prior_df, embedding_dict = embedding_dict)
     #reannotate
     if reannotate:
         logger.info(f"🖋️ Reannotating cells")

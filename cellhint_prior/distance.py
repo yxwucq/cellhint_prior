@@ -84,7 +84,8 @@ class Distance():
         return base
 
     @staticmethod
-    def from_adata(adata: AnnData, dataset: str, cell_type: str, use_rep: Optional[str] = None, metric: Optional[str] = None, n_jobs: Optional[int] = None, check_params: bool = True, **kwargs):
+    def from_adata(adata: AnnData, dataset: str, cell_type: str, use_rep: Optional[str] = None, metric: Optional[str] = None, n_jobs: Optional[int] = None, check_params: bool = True, 
+                   embedding_dict: Optional[dict] = None, **kwargs):
         """
         Generate a :class:`~cellhint.distance.Distance` object from the :class:`~anndata.AnnData` given.
 
@@ -159,7 +160,28 @@ class Distance():
                 Cell_X = Cell_X.toarray()
             if isinstance(Celltype_X, spmatrix):
                 Celltype_X = Celltype_X.toarray()
+
         dist_mat = pairwise_distances(Cell_X, Celltype_X, metric = metric, n_jobs = n_jobs, **kwargs)
+        
+        # integrate the prior similarity matrix
+        if embedding_dict is not None:
+            Cell_X_prior = np.array([embedding_dict[x] for x in list(celltypes)])
+            Celltype_X_prior = np.array([embedding_dict[x] for x in col_cs])
+            prior_similarity_mat = np.dot(Cell_X_prior, Celltype_X_prior.T)
+
+            assert prior_similarity_mat.shape == dist_mat.shape, "The shape of the prior distance matrix does not match the shape of the calculated distance matrix"
+            # normalize the prior similarity matrix
+            
+            similarity_mat = np.exp(-dist_mat / dist_mat.mean())
+            from scipy.special import softmax
+            clarity = np.var(softmax(similarity_mat, axis=1), axis=1)
+            clarity_normalized = (clarity - np.min(clarity)) / (np.max(clarity) - np.min(clarity))
+            integrated_similarity_mat = np.zeros_like(similarity_mat)
+            for i in range(similarity_mat.shape[0]):
+                alpha = 1 - clarity_normalized[i]  # the higher the clarity, the lower the alpha
+                integrated_similarity_mat[i] = 0.1 * (alpha * prior_similarity_mat[i] + (1 - alpha) * similarity_mat[i]) + 0.9 * similarity_mat[i]
+            dist_mat = -dist_mat.mean() * np.log(integrated_similarity_mat)
+        
         cell = pd.DataFrame(dict(dataset=datasets, ID=IDs, cell_type=celltypes))
         cell_type = pd.DataFrame(dict(dataset=col_ds, cell_type=col_cs))
         return Distance(dist_mat, cell, cell_type)
